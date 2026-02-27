@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import PixiGame from './PixiGame.tsx';
+import AddAgentModal from './AddAgentModal.tsx';
 
 import { useElementSize } from 'usehooks-ts';
 import { Stage } from '@pixi/react';
@@ -20,6 +21,7 @@ export default function Game() {
     kind: 'player';
     id: GameId<'players'>;
   }>();
+  const [showAddAgent, setShowAddAgent] = useState(false);
   const [gameWrapperRef, { width, height }] = useElementSize();
 
   const worldStatus = useQuery(api.world.defaultWorldStatus);
@@ -45,6 +47,17 @@ export default function Game() {
       <div className="w-full h-full grid grid-rows-[240px_1fr] lg:grid-rows-[1fr] lg:grid-cols-[1fr_auto] overflow-hidden">
         {/* Game area */}
         <div className="relative overflow-hidden bg-brown-900" ref={gameWrapperRef}>
+          <button
+            onClick={() => setShowAddAgent(true)}
+            className="button absolute top-4 right-4 z-10 text-sm"
+          >
+            <span>+ Add Agent</span>
+          </button>
+          <AddAgentModal
+            isOpen={showAddAgent}
+            onClose={() => setShowAddAgent(false)}
+            engineId={engineId}
+          />
           <div className="absolute inset-0">
             <div className="container">
               <Stage width={width} height={height} options={{ backgroundColor: 0x7ab5ff }}>
