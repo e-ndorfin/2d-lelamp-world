@@ -50,4 +50,15 @@ export const agentTables = {
     textHash: v.bytes(),
     embedding: v.array(v.float64()),
   }).index('text', ['textHash']),
+
+  identityDocuments: defineTable({
+    worldId: v.id('worlds'),
+    agentId: v.string(),
+    docType: v.union(v.literal('soul'), v.literal('agents'), v.literal('memory')),
+    content: v.string(),
+    version: v.number(),
+    lastUpdated: v.number(),
+  })
+    .index('by_agent', ['worldId', 'agentId'])
+    .index('by_agent_type', ['worldId', 'agentId', 'docType']),
 };

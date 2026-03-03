@@ -169,6 +169,23 @@ export const agentDoSomething = internalAction({
   },
 });
 
+export const agentNightReflection = internalAction({
+  args: {
+    worldId: v.id('worlds'),
+    playerId,
+    agentId,
+    operationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.runAction(internal.agent.identity.nightReflection, {
+      worldId: args.worldId,
+      agentId: args.agentId,
+      playerId: args.playerId,
+      operationId: args.operationId,
+    });
+  },
+});
+
 function wanderDestination(worldMap: WorldMap) {
   // Wander someonewhere at least one tile away from the edge.
   return {

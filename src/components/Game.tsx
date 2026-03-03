@@ -57,6 +57,7 @@ export default function Game() {
             isOpen={showAddAgent}
             onClose={() => setShowAddAgent(false)}
             engineId={engineId}
+            worldId={worldId}
           />
           <div className="absolute inset-0">
             <div className="container">

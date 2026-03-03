@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from 'react-modal';
 import { Id } from '../../convex/_generated/dataModel';
 import { useSendInput } from '../hooks/sendInput';
+import { useAction, useMutation } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 import { toastOnError } from '../toasts';
+import BootstrapChat from './BootstrapChat';
 
 const SPRITES = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8'] as const;
 const SPRITE_SHEET_URL = '/ai-town/assets/32x32folk.png';
@@ -105,48 +108,90 @@ function SpritePreview({
   );
 }
 
+interface BootstrapMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export default function AddAgentModal({
   isOpen,
   onClose,
   engineId,
+  worldId,
 }: {
   isOpen: boolean;
   onClose: () => void;
   engineId: Id<'engines'>;
+  worldId: Id<'worlds'>;
 }) {
   const [name, setName] = useState('');
   const [character, setCharacter] = useState('f1');
-  const [identity, setIdentity] = useState('');
-  const [plan, setPlan] = useState('');
+  const [bootstrapMessages, setBootstrapMessages] = useState<BootstrapMessage[]>([]);
   const [presets, setPresets] = useState<AgentPreset[]>(loadPresets);
   const [selectedPreset, setSelectedPreset] = useState('');
   const [creating, setCreating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createAgent = useSendInput(engineId, 'createCustomAgent');
+  const extractBootstrapDocs = useAction(api.agent.identity.extractBootstrapDocs);
+  const saveBootstrapDocs = useMutation(api.agent.identity.saveBootstrapDocs);
+
+  const userMessageCount = bootstrapMessages.filter((m) => m.role === 'user').length;
 
   const handleCreate = useCallback(async () => {
-    if (!name.trim() || !identity.trim() || !plan.trim()) return;
+    if (!name.trim() || userMessageCount < 3) return;
     setCreating(true);
     try {
-      await toastOnError(createAgent({ name: name.trim(), character, identity: identity.trim(), plan: plan.trim() }));
-      const preset: AgentPreset = { name: name.trim(), character, identity: identity.trim(), plan: plan.trim() };
-      const updated = upsertPreset(presets, preset);
-      setPresets(updated);
-      savePresets(updated);
+      // 1. Extract identity docs from bootstrap transcript
+      const docs = await extractBootstrapDocs({
+        name: name.trim(),
+        bootstrapMessages,
+      });
+
+      // 2. Create the agent via the game engine
+      const result = await toastOnError(
+        createAgent({
+          name: name.trim(),
+          character,
+          identity: docs.identity,
+          plan: docs.plan,
+        }),
+      );
+
+      // 3. Save identity documents with the real agentId
+      if (result && typeof result === 'object' && 'agentId' in result) {
+        await saveBootstrapDocs({
+          worldId,
+          agentId: (result as { agentId: string }).agentId,
+          soul: docs.soul,
+          agents: docs.agents,
+          memory: docs.memory,
+        });
+      }
+
       onClose();
+    } catch (err) {
+      console.error('Failed to create agent:', err);
     } finally {
       setCreating(false);
     }
-  }, [name, character, identity, plan, presets, createAgent, onClose]);
+  }, [
+    name,
+    character,
+    bootstrapMessages,
+    userMessageCount,
+    createAgent,
+    extractBootstrapDocs,
+    saveBootstrapDocs,
+    worldId,
+    onClose,
+  ]);
 
   const handleLoadPreset = useCallback(() => {
     const preset = presets.find((p) => p.name === selectedPreset);
     if (!preset) return;
     setName(preset.name);
     setCharacter(preset.character);
-    setIdentity(preset.identity);
-    setPlan(preset.plan);
   }, [selectedPreset, presets]);
 
   const handleDeletePreset = useCallback(() => {
@@ -280,29 +325,15 @@ export default function AddAgentModal({
         </div>
       </div>
 
-      {/* Identity */}
-      <div className="mb-3">
-        <label className="block text-sm mb-1">Identity</label>
-        <textarea
-          value={identity}
-          onChange={(e) => setIdentity(e.target.value)}
-          rows={3}
-          placeholder="Describe the agent's personality and background..."
-          className="w-full bg-brown-900 text-brown-100 border border-brown-700 rounded px-2 py-1 resize-y"
-        />
-      </div>
-
-      {/* Plan */}
-      <div className="mb-4">
-        <label className="block text-sm mb-1">Plan</label>
-        <textarea
-          value={plan}
-          onChange={(e) => setPlan(e.target.value)}
-          rows={2}
-          placeholder="What does this agent want to do?"
-          className="w-full bg-brown-900 text-brown-100 border border-brown-700 rounded px-2 py-1 resize-y"
-        />
-      </div>
+      {/* Bootstrap Chat */}
+      {name.trim() && (
+        <div className="mb-4">
+          <BootstrapChat
+            agentName={name.trim()}
+            onTranscriptReady={setBootstrapMessages}
+          />
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3 justify-end">
@@ -311,10 +342,10 @@ export default function AddAgentModal({
         </button>
         <button
           onClick={handleCreate}
-          disabled={creating || !name.trim() || !identity.trim() || !plan.trim()}
+          disabled={creating || !name.trim() || userMessageCount < 3}
           className="button text-sm disabled:opacity-40"
         >
-          <span>{creating ? 'Creating...' : 'Create'}</span>
+          <span>{creating ? 'Creating agent...' : 'Finish & Create Agent'}</span>
         </button>
       </div>
     </Modal>

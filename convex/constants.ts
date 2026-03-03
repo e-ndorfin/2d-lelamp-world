@@ -76,3 +76,13 @@ export const ENGINE_ACTION_DURATION = 30000;
 export const MAX_PATHFINDS_PER_STEP = 16;
 
 export const DEFAULT_NAME = 'Me';
+
+// Game day/night cycle (10 real minutes = 1 game day)
+export const GAME_DAY_DURATION = 10 * 60_000;
+// Night begins at 70% of the day (7 min mark)
+export const GAME_NIGHT_START_RATIO = 0.7;
+
+// Identity document size limits (characters)
+export const MAX_SOUL_CHARS = 2000;
+export const MAX_AGENTS_CHARS = 1500;
+export const MAX_MEMORY_DOC_CHARS = 2000;
