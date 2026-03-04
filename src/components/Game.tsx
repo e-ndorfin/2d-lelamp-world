@@ -6,6 +6,7 @@ import { useElementSize } from 'usehooks-ts';
 import { Stage } from '@pixi/react';
 import { ConvexProvider, useConvex, useQuery } from 'convex/react';
 import PlayerDetails from './PlayerDetails.tsx';
+import GameClockDisplay from './GameClockDisplay.tsx';
 import { api } from '../../convex/_generated/api';
 import { useWorldHeartbeat } from '../hooks/useWorldHeartbeat.ts';
 import { useHistoricalTime } from '../hooks/useHistoricalTime.ts';
@@ -53,6 +54,9 @@ export default function Game() {
           >
             <span>+ Add Agent</span>
           </button>
+          <div className="absolute bottom-4 right-4 z-10">
+            <GameClockDisplay />
+          </div>
           <AddAgentModal
             isOpen={showAddAgent}
             onClose={() => setShowAddAgent(false)}
