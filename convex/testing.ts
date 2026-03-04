@@ -4,6 +4,7 @@ import {
   DatabaseReader,
   internalAction,
   internalMutation,
+  internalQuery,
   mutation,
   query,
 } from './_generated/server';
@@ -198,5 +199,83 @@ export const testConvo = internalAction({
       'p:6' as GameId<'players'>,
     )) as any;
     return await a.readAll();
+  },
+});
+
+// --- Identity Stack Tools ---
+
+// View the identity documents for all agents in the world
+export const viewIdentityStack = query({
+  args: {},
+  handler: async (ctx) => {
+    const worldStatus = await ctx.db
+      .query('worldStatus')
+      .filter((q) => q.eq(q.field('isDefault'), true))
+      .first();
+    if (!worldStatus) return { error: 'No default world' };
+    const docs = await ctx.db
+      .query('identityDocuments')
+      .withIndex('by_agent', (q) => q.eq('worldId', worldStatus.worldId))
+      .collect();
+    return docs.map((d) => ({
+      agentId: d.agentId,
+      docType: d.docType,
+      version: d.version,
+      contentPreview: d.content.slice(0, 200),
+    }));
+  },
+});
+
+// Migrate all existing agents to identity documents (run after agents exist)
+export const migrateAllAgents = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const worldStatus = await ctx.runQuery(internal.testing.getDefaultWorldForMigration);
+    if (!worldStatus) {
+      throw new Error('No default world found');
+    }
+    const { worldId, agents } = worldStatus;
+    for (const agent of agents) {
+      console.log(`Migrating agent ${agent.agentId} (player ${agent.playerId})...`);
+      await ctx.runAction(internal.agent.identity.migrateAgentIdentity, {
+        worldId,
+        agentId: agent.agentId,
+        playerId: agent.playerId,
+        identity: agent.identity,
+        plan: agent.plan,
+      });
+    }
+    console.log(`Migration complete for ${agents.length} agents.`);
+  },
+});
+
+export const getDefaultWorldForMigration = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const worldStatus = await ctx.db
+      .query('worldStatus')
+      .filter((q) => q.eq(q.field('isDefault'), true))
+      .first();
+    if (!worldStatus) return null;
+    const world = await ctx.db.get(worldStatus.worldId);
+    if (!world) return null;
+    const agents = [];
+    for (const agent of world.agents) {
+      const desc = await ctx.db
+        .query('agentDescriptions')
+        .withIndex('worldId', (q) =>
+          q.eq('worldId', worldStatus.worldId).eq('agentId', agent.id),
+        )
+        .first();
+      if (desc) {
+        agents.push({
+          agentId: agent.id,
+          playerId: agent.playerId,
+          identity: desc.identity,
+          plan: desc.plan,
+        });
+      }
+    }
+    return { worldId: worldStatus.worldId, agents };
   },
 });

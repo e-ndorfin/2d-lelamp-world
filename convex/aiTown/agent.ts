@@ -22,6 +22,7 @@ import { distance } from '../util/geometry';
 import { internal } from '../_generated/api';
 import { movePlayer } from './movement';
 import { insertInput } from './insertInput';
+import { getGameTimeOfDay } from './gameClock';
 
 export class Agent {
   id: GameId<'agents'>;
@@ -29,6 +30,7 @@ export class Agent {
   toRemember?: GameId<'conversations'>;
   lastConversation?: number;
   lastInviteAttempt?: number;
+  lastReflectionDay?: number;
   inProgressOperation?: {
     name: string;
     operationId: string;
@@ -36,7 +38,8 @@ export class Agent {
   };
 
   constructor(serialized: SerializedAgent) {
-    const { id, lastConversation, lastInviteAttempt, inProgressOperation } = serialized;
+    const { id, lastConversation, lastInviteAttempt, lastReflectionDay, inProgressOperation } =
+      serialized;
     const playerId = parseGameId('players', serialized.playerId);
     this.id = parseGameId('agents', id);
     this.playerId = playerId;
@@ -46,6 +49,7 @@ export class Agent {
         : undefined;
     this.lastConversation = lastConversation;
     this.lastInviteAttempt = lastInviteAttempt;
+    this.lastReflectionDay = lastReflectionDay;
     this.inProgressOperation = inProgressOperation;
   }
 
@@ -62,7 +66,24 @@ export class Agent {
       console.log(`Timing out ${JSON.stringify(this.inProgressOperation)}`);
       delete this.inProgressOperation;
     }
+    // Check if it's night and agent hasn't reflected yet today.
+    const clock = getGameTimeOfDay(now);
     const conversation = game.world.playerConversation(player);
+    if (
+      clock.isNight &&
+      this.lastReflectionDay !== clock.dayNumber &&
+      !conversation
+    ) {
+      console.log(`Agent ${this.id} starting night reflection (day ${clock.dayNumber})`);
+      this.lastReflectionDay = clock.dayNumber;
+      this.startOperation(game, now, 'agentNightReflection', {
+        worldId: game.worldId,
+        agentId: this.id,
+        playerId: this.playerId,
+      });
+      return;
+    }
+
     const member = conversation?.participants.get(player.id);
 
     const recentlyAttemptedInvite =
@@ -263,6 +284,7 @@ export class Agent {
       toRemember: this.toRemember,
       lastConversation: this.lastConversation,
       lastInviteAttempt: this.lastInviteAttempt,
+      lastReflectionDay: this.lastReflectionDay,
       inProgressOperation: this.inProgressOperation,
     };
   }
@@ -274,6 +296,7 @@ export const serializedAgent = {
   toRemember: v.optional(conversationId),
   lastConversation: v.optional(v.number()),
   lastInviteAttempt: v.optional(v.number()),
+  lastReflectionDay: v.optional(v.number()),
   inProgressOperation: v.optional(
     v.object({
       name: v.string(),
@@ -298,11 +321,37 @@ export async function runAgentOperation(ctx: MutationCtx, operation: string, arg
     case 'agentDoSomething':
       reference = internal.aiTown.agentOperations.agentDoSomething;
       break;
+    case 'agentNightReflection':
+      reference = internal.aiTown.agentOperations.agentNightReflection;
+      break;
     default:
       throw new Error(`Unknown operation: ${operation}`);
   }
   await ctx.scheduler.runAfter(0, reference, args);
 }
+
+export const finishNightReflection = internalMutation({
+  args: {
+    worldId: v.id('worlds'),
+    agentId: agentId,
+    operationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const world = await ctx.db.get(args.worldId);
+    if (!world) return;
+    const agent = world.agents.find((a) => a.id === args.agentId);
+    if (!agent) return;
+    if (
+      agent.inProgressOperation &&
+      agent.inProgressOperation.operationId === args.operationId
+    ) {
+      const updatedAgents = world.agents.map((a) =>
+        a.id === args.agentId ? { ...a, inProgressOperation: undefined } : a,
+      );
+      await ctx.db.patch(args.worldId, { agents: updatedAgents });
+    }
+  },
+});
 
 export const agentSendMessage = internalMutation({
   args: {

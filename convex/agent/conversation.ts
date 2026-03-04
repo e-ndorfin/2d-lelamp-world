@@ -17,15 +17,13 @@ export async function startConversationMessage(
   playerId: GameId<'players'>,
   otherPlayerId: GameId<'players'>,
 ): Promise<string> {
-  const { player, otherPlayer, agent, otherAgent, lastConversation } = await ctx.runQuery(
-    selfInternal.queryPromptData,
-    {
+  const { player, otherPlayer, agent, otherAgent, lastConversation, identityStack } =
+    await ctx.runQuery(selfInternal.queryPromptData, {
       worldId,
       playerId,
       otherPlayerId,
       conversationId,
-    },
-  );
+    });
   const embedding = await embeddingsCache.fetch(
     ctx,
     `${player.name} is talking to ${otherPlayer.name}`,
@@ -44,7 +42,7 @@ export async function startConversationMessage(
   const prompt = [
     `You are ${player.name}, and you just started a conversation with ${otherPlayer.name}.`,
   ];
-  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null, identityStack));
   prompt.push(...previousConversationPrompt(otherPlayer, lastConversation));
   prompt.push(...relatedMemoriesPrompt(memories));
   if (memoryWithOtherPlayer) {
@@ -85,15 +83,13 @@ export async function continueConversationMessage(
   playerId: GameId<'players'>,
   otherPlayerId: GameId<'players'>,
 ): Promise<string> {
-  const { player, otherPlayer, conversation, agent, otherAgent } = await ctx.runQuery(
-    selfInternal.queryPromptData,
-    {
+  const { player, otherPlayer, conversation, agent, otherAgent, identityStack } =
+    await ctx.runQuery(selfInternal.queryPromptData, {
       worldId,
       playerId,
       otherPlayerId,
       conversationId,
-    },
-  );
+    });
   const now = Date.now();
   const started = new Date(conversation.created);
   const embedding = await embeddingsCache.fetch(
@@ -105,7 +101,7 @@ export async function continueConversationMessage(
     `You are ${player.name}, and you're currently in a conversation with ${otherPlayer.name}.`,
     `The conversation started at ${started.toLocaleString()}. It's now ${now.toLocaleString()}.`,
   ];
-  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null, identityStack));
   prompt.push(...relatedMemoriesPrompt(memories));
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
@@ -143,20 +139,18 @@ export async function leaveConversationMessage(
   playerId: GameId<'players'>,
   otherPlayerId: GameId<'players'>,
 ): Promise<string> {
-  const { player, otherPlayer, conversation, agent, otherAgent } = await ctx.runQuery(
-    selfInternal.queryPromptData,
-    {
+  const { player, otherPlayer, conversation, agent, otherAgent, identityStack } =
+    await ctx.runQuery(selfInternal.queryPromptData, {
       worldId,
       playerId,
       otherPlayerId,
       conversationId,
-    },
-  );
+    });
   const prompt = [
     `You are ${player.name}, and you're currently in a conversation with ${otherPlayer.name}.`,
     `You've decided to leave the question and would like to politely tell them you're leaving the conversation.`,
   ];
-  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null, identityStack));
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
     `How would you like to tell them that you're leaving? Your response should be brief and within 200 characters.`,
@@ -185,13 +179,31 @@ export async function leaveConversationMessage(
   return trimContentPrefx(content, lastPrompt);
 }
 
+interface IdentityStack {
+  soul: string | null;
+  agents: string | null;
+  memory: string | null;
+}
+
 function agentPrompts(
   otherPlayer: { name: string },
   agent: { identity: string; plan: string } | null,
   otherAgent: { identity: string; plan: string } | null,
+  identityStack?: IdentityStack | null,
 ): string[] {
   const prompt = [];
-  if (agent) {
+  // Use identity stack if available, fall back to legacy identity/plan
+  if (identityStack?.soul) {
+    prompt.push(`## Your Soul\n${identityStack.soul}`);
+  }
+  if (identityStack?.agents) {
+    prompt.push(`## Your Operating Instructions\n${identityStack.agents}`);
+  }
+  if (identityStack?.memory) {
+    prompt.push(`## Your Core Knowledge\n${identityStack.memory}`);
+  }
+  if (!identityStack?.soul && agent) {
+    // Legacy fallback
     prompt.push(`About you: ${agent.identity}`);
     prompt.push(`Your goals for the conversation: ${agent.plan}`);
   }
@@ -333,6 +345,16 @@ export const queryPromptData = internalQuery({
         throw new Error(`Conversation ${lastTogether.conversationId} not found`);
       }
     }
+    // Fetch identity stack for this agent
+    const identityDocs = await ctx.db
+      .query('identityDocuments')
+      .withIndex('by_agent', (q) => q.eq('worldId', args.worldId).eq('agentId', agent.id))
+      .collect();
+    const identityStack: IdentityStack = { soul: null, agents: null, memory: null };
+    for (const doc of identityDocs) {
+      identityStack[doc.docType as keyof IdentityStack] = doc.content;
+    }
+
     return {
       player: { name: playerDescription.name, ...player },
       otherPlayer: { name: otherPlayerDescription.name, ...otherPlayer },
@@ -344,6 +366,7 @@ export const queryPromptData = internalQuery({
         ...otherAgent,
       },
       lastConversation,
+      identityStack,
     };
   },
 });
