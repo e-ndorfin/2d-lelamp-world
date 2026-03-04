@@ -30,15 +30,7 @@ export function Messages({
     worldId,
     conversationId: conversation.doc.id,
   });
-  let currentlyTyping = conversation.kind === 'active' ? conversation.doc.isTyping : undefined;
-  if (messages !== undefined && currentlyTyping) {
-    if (messages.find((m) => m.messageUuid === currentlyTyping!.messageUuid)) {
-      currentlyTyping = undefined;
-    }
-  }
-  const currentlyTypingName =
-    currentlyTyping &&
-    descriptions?.playerDescriptions.find((p) => p.playerId === currentlyTyping?.playerId)?.name;
+  // No more typing indicator — messages arrive via queue
 
   const scrollView = scrollViewRef.current;
   const isScrolledToBottom = useRef(false);
@@ -60,7 +52,7 @@ export function Messages({
         behavior: 'smooth',
       });
     }
-  }, [messages, currentlyTyping]);
+  }, [messages]);
 
   if (messages === undefined) {
     return null;
@@ -138,21 +130,6 @@ export function Messages({
     <div className="chats text-base sm:text-sm">
       <div className="bg-brown-200 text-black p-2">
         {nodes.length > 0 && nodes.map((n) => n.node)}
-        {currentlyTyping && currentlyTyping.playerId !== humanPlayerId && (
-          <div key="typing" className="leading-tight mb-6">
-            <div className="flex gap-4">
-              <span className="uppercase flex-grow">{currentlyTypingName}</span>
-              <time dateTime={currentlyTyping.since.toString()}>
-                {new Date(currentlyTyping.since).toLocaleString()}
-              </time>
-            </div>
-            <div className={clsx('bubble')}>
-              <p className="bg-white -mx-3 -my-1">
-                <i>typing...</i>
-              </p>
-            </div>
-          </div>
-        )}
         {humanPlayer && inConversationWithMe && conversation.kind === 'active' && (
           <MessageInput
             worldId={worldId}

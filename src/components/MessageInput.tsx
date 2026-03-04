@@ -22,31 +22,12 @@ export function MessageInput({
   const humanName = descriptions?.playerDescriptions.find((p) => p.playerId === humanPlayer.id)
     ?.name;
   const inputRef = useRef<HTMLParagraphElement>(null);
-  const inflightUuid = useRef<string | undefined>();
   const writeMessage = useMutation(api.messages.writeMessage);
-  const startTyping = useSendInput(engineId, 'startTyping');
-  const currentlyTyping = conversation.isTyping;
 
   const onKeyDown = async (e: KeyboardEvent) => {
     e.stopPropagation();
 
-    // Set the typing indicator if we're not submitting.
     if (e.key !== 'Enter') {
-      console.log(inflightUuid.current);
-      if (currentlyTyping || inflightUuid.current !== undefined) {
-        return;
-      }
-      inflightUuid.current = crypto.randomUUID();
-      try {
-        // Don't show a toast on error.
-        await startTyping({
-          playerId: humanPlayer.id,
-          conversationId: conversation.id,
-          messageUuid: inflightUuid.current,
-        });
-      } finally {
-        inflightUuid.current = undefined;
-      }
       return;
     }
 
@@ -60,11 +41,7 @@ export function MessageInput({
     if (!text) {
       return;
     }
-    let messageUuid = inflightUuid.current;
-    if (currentlyTyping && currentlyTyping.playerId === humanPlayer.id) {
-      messageUuid = currentlyTyping.messageUuid;
-    }
-    messageUuid = messageUuid || crypto.randomUUID();
+    const messageUuid = crypto.randomUUID();
     await writeMessage({
       worldId,
       playerId: humanPlayer.id,

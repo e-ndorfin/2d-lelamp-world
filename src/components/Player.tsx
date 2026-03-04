@@ -55,7 +55,7 @@ export const Player = ({
   }
 
   const isSpeaking = !![...game.world.conversations.values()].find(
-    (c) => c.isTyping?.playerId === player.id,
+    (c) => c.participants.has(player.id) && c.participants.get(player.id)?.status.kind === 'participating',
   );
   const isThinking =
     !isSpeaking &&

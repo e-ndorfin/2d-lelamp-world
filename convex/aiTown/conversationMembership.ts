@@ -3,9 +3,8 @@ import { GameId, parseGameId, playerId } from './ids';
 
 export const serializedConversationMembership = {
   playerId,
-  invited: v.number(),
+  joined: v.number(),
   status: v.union(
-    v.object({ kind: v.literal('invited') }),
     v.object({ kind: v.literal('walkingOver') }),
     v.object({ kind: v.literal('participating'), started: v.number() }),
   ),
@@ -14,24 +13,23 @@ export type SerializedConversationMembership = ObjectType<typeof serializedConve
 
 export class ConversationMembership {
   playerId: GameId<'players'>;
-  invited: number;
+  joined: number;
   status:
-    | { kind: 'invited' }
     | { kind: 'walkingOver' }
     | { kind: 'participating'; started: number };
 
   constructor(serialized: SerializedConversationMembership) {
-    const { playerId, invited, status } = serialized;
+    const { playerId, joined, status } = serialized;
     this.playerId = parseGameId('players', playerId);
-    this.invited = invited;
+    this.joined = joined;
     this.status = status;
   }
 
   serialize(): SerializedConversationMembership {
-    const { playerId, invited, status } = this;
+    const { playerId, joined, status } = this;
     return {
       playerId,
-      invited,
+      joined,
       status,
     };
   }

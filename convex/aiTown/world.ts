@@ -4,6 +4,8 @@ import { Player, serializedPlayer } from './player';
 import { Agent, serializedAgent } from './agent';
 import { GameId, parseGameId, playerId } from './ids';
 import { parseMap } from '../util/object';
+import { distance } from '../util/geometry';
+import { Point } from '../util/types';
 
 export const historicalLocations = v.array(
   v.object({
@@ -46,6 +48,18 @@ export class World {
 
   playerConversation(player: Player): Conversation | undefined {
     return [...this.conversations.values()].find((c) => c.participants.has(player.id));
+  }
+
+  nearbyPlayers(position: Point, radius: number): Player[] {
+    return [...this.players.values()].filter(
+      (p) => distance(p.position, position) <= radius,
+    );
+  }
+
+  nearbyConversations(position: Point, radius: number): Conversation[] {
+    return [...this.conversations.values()].filter(
+      (c) => c.position && distance(c.position, position) <= radius,
+    );
   }
 
   serialize(): SerializedWorld {

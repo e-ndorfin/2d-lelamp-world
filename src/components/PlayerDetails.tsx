@@ -48,9 +48,7 @@ export default function PlayerDetails({
 
   const playerDescription = playerId && game.playerDescriptions.get(playerId);
 
-  const startConversation = useSendInput(engineId, 'startConversation');
-  const acceptInvite = useSendInput(engineId, 'acceptInvite');
-  const rejectInvite = useSendInput(engineId, 'rejectInvite');
+  const joinConversation = useSendInput(engineId, 'joinConversation');
   const leaveConversation = useSendInput(engineId, 'leaveConversation');
 
   if (!playerId) {
@@ -64,7 +62,11 @@ export default function PlayerDetails({
     return null;
   }
   const isMe = humanPlayer && player.id === humanPlayer.id;
-  const canInvite = !isMe && !playerConversation && humanPlayer && !humanConversation;
+
+  const humanStatus =
+    humanPlayer && humanConversation && humanConversation.participants.get(humanPlayer.id)?.status;
+  const playerStatus = playerConversation && playerConversation.participants.get(playerId)?.status;
+
   const sameConversation =
     !isMe &&
     humanPlayer &&
@@ -72,50 +74,26 @@ export default function PlayerDetails({
     playerConversation &&
     humanConversation.id === playerConversation.id;
 
-  const humanStatus =
-    humanPlayer && humanConversation && humanConversation.participants.get(humanPlayer.id)?.status;
-  const playerStatus = playerConversation && playerConversation.participants.get(playerId)?.status;
-
-  const haveInvite = sameConversation && humanStatus?.kind === 'invited';
-  const waitingForAccept =
-    sameConversation && playerConversation.participants.get(playerId)?.status.kind === 'invited';
-  const waitingForNearby =
-    sameConversation && playerStatus?.kind === 'walkingOver' && humanStatus?.kind === 'walkingOver';
-
   const inConversationWithMe =
     sameConversation &&
     playerStatus?.kind === 'participating' &&
     humanStatus?.kind === 'participating';
 
-  const onStartConversation = async () => {
-    if (!humanPlayer || !playerId) {
-      return;
-    }
-    console.log(`Starting conversation`);
-    await toastOnError(startConversation({ playerId: humanPlayer.id, invitee: playerId }));
-  };
-  const onAcceptInvite = async () => {
-    if (!humanPlayer || !humanConversation || !playerId) {
+  // Human can join the player's conversation if they have one and the human isn't in one
+  const canJoin = !isMe && playerConversation && humanPlayer && !humanConversation;
+
+  const onJoinConversation = async () => {
+    if (!humanPlayer || !playerConversation) {
       return;
     }
     await toastOnError(
-      acceptInvite({
+      joinConversation({
         playerId: humanPlayer.id,
-        conversationId: humanConversation.id,
+        conversationId: playerConversation.id,
       }),
     );
   };
-  const onRejectInvite = async () => {
-    if (!humanPlayer || !humanConversation) {
-      return;
-    }
-    await toastOnError(
-      rejectInvite({
-        playerId: humanPlayer.id,
-        conversationId: humanConversation.id,
-      }),
-    );
-  };
+
   const onLeaveConversation = async () => {
     if (!humanPlayer || !inConversationWithMe || !humanConversation) {
       return;
@@ -127,8 +105,6 @@ export default function PlayerDetails({
       }),
     );
   };
-  // const pendingSuffix = (inputName: string) =>
-  //   [...inflightInputs.values()].find((i) => i.name === inputName) ? ' opacity-50' : '';
 
   const pendingSuffix = (s: string) => '';
   return (
@@ -148,30 +124,16 @@ export default function PlayerDetails({
           </h2>
         </a>
       </div>
-      {canInvite && (
+      {canJoin && (
         <a
           className={
             'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
-            pendingSuffix('startConversation')
+            pendingSuffix('joinConversation')
           }
-          onClick={onStartConversation}
+          onClick={onJoinConversation}
         >
           <div className="h-full bg-clay-700 text-center">
-            <span>Start conversation</span>
-          </div>
-        </a>
-      )}
-      {waitingForAccept && (
-        <a className="mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto opacity-50">
-          <div className="h-full bg-clay-700 text-center">
-            <span>Waiting for accept...</span>
-          </div>
-        </a>
-      )}
-      {waitingForNearby && (
-        <a className="mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto opacity-50">
-          <div className="h-full bg-clay-700 text-center">
-            <span>Walking over...</span>
+            <span>Join conversation</span>
           </div>
         </a>
       )}
@@ -187,32 +149,6 @@ export default function PlayerDetails({
             <span>Leave conversation</span>
           </div>
         </a>
-      )}
-      {haveInvite && (
-        <>
-          <a
-            className={
-              'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
-              pendingSuffix('acceptInvite')
-            }
-            onClick={onAcceptInvite}
-          >
-            <div className="h-full bg-clay-700 text-center">
-              <span>Accept</span>
-            </div>
-          </a>
-          <a
-            className={
-              'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
-              pendingSuffix('rejectInvite')
-            }
-            onClick={onRejectInvite}
-          >
-            <div className="h-full bg-clay-700 text-center">
-              <span>Reject</span>
-            </div>
-          </a>
-        </>
       )}
       {!playerConversation && player.activity && player.activity.until > Date.now() && (
         <div className="box flex-grow mt-6">

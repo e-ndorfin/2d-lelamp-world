@@ -8,6 +8,21 @@ import { point } from '../util/types';
 import { Descriptions } from '../../data/characters';
 import { AgentDescription } from './agentDescription';
 import { Agent } from './agent';
+import { PROXIMITY_RADIUS } from '../constants';
+
+const actionValidator = v.union(
+  v.object({ type: v.literal('move_to'), x: v.number(), y: v.number() }),
+  v.object({ type: v.literal('speak'), message: v.string(), conversationId: v.optional(v.string()) }),
+  v.object({ type: v.literal('join_conversation'), conversationId: v.string() }),
+  v.object({ type: v.literal('leave_conversation') }),
+  v.object({
+    type: v.literal('start_activity'),
+    description: v.string(),
+    emoji: v.string(),
+    duration: v.number(),
+  }),
+  v.object({ type: v.literal('observe') }),
+);
 
 export const agentInputs = {
   finishRememberConversation: inputHandler({
@@ -33,13 +48,12 @@ export const agentInputs = {
       return null;
     },
   }),
-  finishDoSomething: inputHandler({
+
+  finishDecideAction: inputHandler({
     args: {
       operationId: v.string(),
-      agentId: v.id('agents'),
-      destination: v.optional(point),
-      invitee: v.optional(v.id('players')),
-      activity: v.optional(activity),
+      agentId: v.string(),
+      action: actionValidator,
     },
     handler: (game, now, args) => {
       const agentId = parseGameId('agents', args.agentId);
@@ -56,24 +70,72 @@ export const agentInputs = {
       }
       delete agent.inProgressOperation;
       const player = game.world.players.get(agent.playerId)!;
-      if (args.invitee) {
-        const inviteeId = parseGameId('players', args.invitee);
-        const invitee = game.world.players.get(inviteeId);
-        if (!invitee) {
-          throw new Error(`Couldn't find player: ${inviteeId}`);
+      const action = args.action;
+
+      switch (action.type) {
+        case 'move_to': {
+          movePlayer(game, now, player, { x: action.x, y: action.y });
+          break;
         }
-        Conversation.start(game, now, player, invitee);
-        agent.lastInviteAttempt = now;
-      }
-      if (args.destination) {
-        movePlayer(game, now, player, args.destination);
-      }
-      if (args.activity) {
-        player.activity = args.activity;
+        case 'speak': {
+          // Find or create a conversation
+          let conversation = game.world.playerConversation(player);
+
+          if (!conversation) {
+            // Create a new conversation at the player's position
+            const convId = Conversation.create(game, now, player, player.position);
+            conversation = game.world.conversations.get(convId)!;
+          }
+
+          // The message text is in action.message — insert it via agentSendMessage
+          // We schedule it as a pending operation that will insert the message
+          const messageUuid = crypto.randomUUID();
+          game.scheduleOperation('agentSendMessage', {
+            worldId: game.worldId,
+            conversationId: conversation.id,
+            agentId: agent.id,
+            playerId: player.id,
+            text: action.message,
+            messageUuid,
+            leaveConversation: false,
+            operationId: args.operationId,
+          });
+          break;
+        }
+        case 'join_conversation': {
+          const convId = parseGameId('conversations', action.conversationId);
+          const conversation = game.world.conversations.get(convId);
+          if (conversation) {
+            conversation.join(game, now, player);
+          } else {
+            console.warn(`Conversation ${action.conversationId} not found for join`);
+          }
+          break;
+        }
+        case 'leave_conversation': {
+          const conversation = game.world.playerConversation(player);
+          if (conversation) {
+            conversation.leave(game, now, player);
+          }
+          break;
+        }
+        case 'start_activity': {
+          player.activity = {
+            description: action.description,
+            emoji: action.emoji,
+            until: now + action.duration,
+          };
+          break;
+        }
+        case 'observe': {
+          // Do nothing
+          break;
+        }
       }
       return null;
     },
   }),
+
   agentFinishSendingMessage: inputHandler({
     args: {
       agentId,
@@ -97,14 +159,6 @@ export const agentInputs = {
       if (!conversation) {
         throw new Error(`Couldn't find conversation: ${conversationId}`);
       }
-      if (
-        !agent.inProgressOperation ||
-        agent.inProgressOperation.operationId !== args.operationId
-      ) {
-        console.debug(`Agent ${agentId} wasn't sending a message ${args.operationId}`);
-        return null;
-      }
-      delete agent.inProgressOperation;
       conversationInputs.finishSendingMessage.handler(game, now, {
         playerId: agent.playerId,
         conversationId: args.conversationId,
@@ -116,6 +170,7 @@ export const agentInputs = {
       return null;
     },
   }),
+
   createAgent: inputHandler({
     args: {
       descriptionIndex: v.number(),
@@ -137,7 +192,7 @@ export const agentInputs = {
           playerId: playerId,
           inProgressOperation: undefined,
           lastConversation: undefined,
-          lastInviteAttempt: undefined,
+          lastReaction: undefined,
           toRemember: undefined,
         }),
       );
@@ -152,6 +207,7 @@ export const agentInputs = {
       return { agentId };
     },
   }),
+
   createCustomAgent: inputHandler({
     args: {
       name: v.string(),
@@ -169,7 +225,7 @@ export const agentInputs = {
           playerId: playerId,
           inProgressOperation: undefined,
           lastConversation: undefined,
-          lastInviteAttempt: undefined,
+          lastReaction: undefined,
           toRemember: undefined,
         }),
       );
